@@ -7,7 +7,7 @@
 #include "RobotVideoReceiver.h"
 #include "glassesVideo.h"
 #include "GlassesMotion\CircularBuffer.h"
-
+#define NO_EXPMT 0
 
 // Including SDKDDKVer.h defines the highest available Windows platform.
 
@@ -37,11 +37,11 @@ extern Mat robot_img;
 extern int G_Target;
 extern ArClientBase *client;
 
-extern int G_Search_Step;
+int G_Search_Step;
 bool isDoneRobot =false;
 extern GLASSESMODE G_glassesMode;
 extern ArMutex GlassesModeMutex;
-time_t HelpStartTime, HelpEndTime, elapseTime;
+ArTime expmtTimer;
 
 int robotCameraAngle = 0;
 
@@ -54,7 +54,7 @@ int robotCameraAngle = 0;
 * @return true if worked perfectly, otherwise false.
 */
 int robotSpeakObjName(int index){
-	
+
 	if(index > 119 || index < 0){
 		std::cout << "robotSpeekObjName: The index exceed normal value." << std::endl;
 		exit(1);
@@ -63,23 +63,23 @@ int robotSpeakObjName(int index){
 	int choice = index / 10;
 	ISpVoice * pVoice = NULL;
 	LPCWSTR objectName[12] = {L"Wireless Router", L"Small Car", L"Coffee Cup", L"Paper Box", L"Tea Container",
-							  L"Mr Potato Head", L"Toy Train", L"Big Bottle", L"Pencil Case", L"Small Bottle",
-							  L"Tooth Paste", L"Tooth Paste"};
+		L"Mr Potato Head", L"Toy Train", L"Big Bottle", L"Pencil Case", L"Small Bottle",
+		L"Tooth Paste", L"Tooth Paste"};
 
 
-    if (FAILED(::CoInitialize(NULL)))
-        return false;
+	if (FAILED(::CoInitialize(NULL)))
+		return false;
 
-    HRESULT hr = CoCreateInstance(CLSID_SpVoice, NULL, CLSCTX_ALL, IID_ISpVoice, (void **)&pVoice );
-    if( SUCCEEDED( hr ) )
-    {
-        hr = pVoice->Speak(objectName[choice], 0, NULL);
-        pVoice->Release();
-        pVoice = NULL;
-    }
-	
-    ::CoUninitialize();
-    return true;
+	HRESULT hr = CoCreateInstance(CLSID_SpVoice, NULL, CLSCTX_ALL, IID_ISpVoice, (void **)&pVoice );
+	if( SUCCEEDED( hr ) )
+	{
+		hr = pVoice->Speak(objectName[choice], 0, NULL);
+		pVoice->Release();
+		pVoice = NULL;
+	}
+
+	::CoUninitialize();
+	return true;
 }
 
 /**
@@ -96,58 +96,58 @@ int robotSpeak(const int index, const char *option)
 	LPCWSTR objectName[4] = {L"Truck", L"Motor", L"Toy ", L"flower pot "};
 
 
-    if (FAILED(::CoInitialize(NULL)))
-        return false;
+	if (FAILED(::CoInitialize(NULL)))
+		return false;
 
-    HRESULT hr = CoCreateInstance(CLSID_SpVoice, NULL, CLSCTX_ALL, IID_ISpVoice, (void **)&pVoice );
-    if( SUCCEEDED( hr ) )
-    {
-			if(!strcmp(option, "name"))
+	HRESULT hr = CoCreateInstance(CLSID_SpVoice, NULL, CLSCTX_ALL, IID_ISpVoice, (void **)&pVoice );
+	if( SUCCEEDED( hr ) )
+	{
+		if(!strcmp(option, "name"))
+		{
+			if(index > 19 || index < 0)
 			{
-				if(index > 19 || index < 0)
-				{
 				std::cout << "robotSpeekObjName: The index exceed normal value." << std::endl;
 				exit(1);
 				return false;
-				}
-				int choice = index / 5;
-        hr = pVoice->Speak(objectName[choice], 0, NULL);
 			}
+			int choice = index / 5;
+			hr = pVoice->Speak(objectName[choice], 0, NULL);
+		}
 
-			if(!strcmp(option, "help"))
-				hr = pVoice->Speak(L"I Need Help", 0, NULL);
-			if(!strcmp(option, "idle"))
-				hr = pVoice->Speak(L"back to idle", 0, NULL);
-			if(!strcmp(option,  "cancel"))
-				hr = pVoice->Speak(L"canceled   go back to idle", 0, NULL);
-			if(!strcmp(option,  "OR_Entry"))
-				hr = pVoice->Speak(L"Object Recognition mode", 0, NULL);
-			if(!strcmp(option,  "complete"))
-				hr = pVoice->Speak(L"Mission has been completed", 0, NULL);
-			if(!strcmp(option,  "tagetApproach"))
-				hr = pVoice->Speak(L"heading to target", 0, NULL);
-      pVoice->Release();
-      pVoice = NULL;
-    }
+		if(!strcmp(option, "help"))
+			hr = pVoice->Speak(L"I Need Help", 0, NULL);
+		if(!strcmp(option, "idle"))
+			hr = pVoice->Speak(L"back to idle", 0, NULL);
+		if(!strcmp(option,  "cancel"))
+			hr = pVoice->Speak(L"canceled   go back to idle", 0, NULL);
+		if(!strcmp(option,  "OR_Entry"))
+			hr = pVoice->Speak(L"Object Recognition mode", 0, NULL);
+		if(!strcmp(option,  "complete"))
+			hr = pVoice->Speak(L"Mission has been completed", 0, NULL);
+		if(!strcmp(option,  "tagetApproach"))
+			hr = pVoice->Speak(L"heading to target", 0, NULL);
+		pVoice->Release();
+		pVoice = NULL;
+	}
 
-    ::CoUninitialize();
+	::CoUninitialize();
 
-    return true;
+	return true;
 }
 
 void asking_for_help()
 {
-	
+
 	robotSpeak(0,"help");
-	
+
 	cout << "the robot needs help!" << endl;
 	CB.clear();
 	G_glassesMode = GLASSES_CONTROL;
-  ISpVoice * pVoice = NULL;
+	ISpVoice * pVoice = NULL;
 }
 
 
-void RobotCommand(int robotMoveComm )
+void RobotCommand(int robotMoveComm, int cameraAngle )
 {
 	ArNetPacket pack;
 	/*robotMoveComm = 255;*/
@@ -169,19 +169,19 @@ void RobotCommand(int robotMoveComm )
 		case 3:
 			if(!turnActionIsFinished)
 			{
-			client->requestOnce("RobotTurnLeft");
-			turnActionIsFinished = true;
-			//elapseTime=0;
-			cout << "RobotTurnLeft has been sent out!" << endl;
+				client->requestOnce("RobotTurnLeft");
+				turnActionIsFinished = true;
+				//elapseTime=0;
+				cout << "RobotTurnLeft has been sent out!" << endl;
 			}
 			break;
 		case 4:
 			if(!turnActionIsFinished)
 			{
-			client->requestOnce("RobotTurnRight");
-			turnActionIsFinished = true;
-			//elapseTime=0;
-			cout << "RobotTurnRight has been sent out!" << endl;
+				client->requestOnce("RobotTurnRight");
+				turnActionIsFinished = true;
+				//elapseTime=0;
+				cout << "RobotTurnRight has been sent out!" << endl;
 			}
 			break;
 		case 5: //CTargetApproach
@@ -196,6 +196,7 @@ void RobotCommand(int robotMoveComm )
 			client->requestOnce("Calibration", &pack);
 			cout << "Calibration is sent out!" << endl; 
 			break;
+
 		case 7:
 			robotSpeak(255, "cancel");
 			client->requestOnce("GlassesCancel");
@@ -207,6 +208,11 @@ void RobotCommand(int robotMoveComm )
 			robotSpeak(0,"tagetApproach");
 			client->requestOnce("TargetApproachObstacles");
 			cout << "TargetApproachObstacles has been sent out!" << endl;
+			break;
+		case 9: 
+			pack.doubleToBuf(robotCameraAngle);
+			client->requestOnce("Calibration", &pack);
+			cout << "Calibration is sent out!" << endl; 
 			break;
 		case 255: //for testing
 			cout << "You are calling the Legacy function!" <<endl;
@@ -224,7 +230,7 @@ void RobotCommand(int robotMoveComm )
 void C_Calibration(ArNetPacket * pack)
 {
 	cout << "Calibration is finished!" << endl; 
-						
+
 	RobotCommand(CTargetApproach);
 }
 
@@ -242,11 +248,11 @@ void C_RobotTurnRight(ArNetPacket * pack)
 
 void C_RobotMotion(ArNetPacket * pack)
 {
-	
+
 	cout << "RobotMotion has been finished!" << endl;
 	G_Search_Step++;
 	isDoneRobot = true;
-	
+
 	//RobotCommand(2); //CameraMotion
 }
 
@@ -259,6 +265,7 @@ void C_CameraMotion(ArNetPacket * pack)
 
 void C_TargetApproach(ArNetPacket * pack)  //finish target approach
 {
+	cout << "Total Time for finding the object: " << expmtTimer.mSecSinceLL()<<endl;
 	cout << "Final step completed: Arrive the object!!!" << endl; 
 	robotSpeak(0,"complete");
 	GlassesModeMutex.lock();
@@ -291,6 +298,7 @@ RobotSearch::RobotSearch():robotOR("r20121111_4.yml.gz")
 
 void RobotSearch::moveRobotCamera()
 {
+	//#if NO_EXPMT
 	if(G_Search_Step<=13)
 	{
 		//the object is detected, enter the search mode. callback: S_RobotMotion
@@ -299,10 +307,14 @@ void RobotSearch::moveRobotCamera()
 	}
 	if(G_Search_Step>13)
 	{
-		RobotCommand(RobotMotion); 
+
+		RobotCommand(RobotMotion);   //for random search
 		G_Search_Step = 0;
 		isDoneRobot = false;
 	}
+	//#else
+
+	//#endif
 }
 
 void RobotSearch::resetRobotCameraParam()
@@ -339,14 +351,17 @@ bool RobotSearch::OR()
 
 void* RobotSearch::runThread(void*)
 {
+	expmtTimer.setToNow();
+	RobotCommand(RobotMotion); 
+	isDoneRobot=false;
 	while(1) 
-  {
+	{
 		if(G_glassesMode == ROBOT_SEARCH)
 		{
-			if(OR())
+			if(OR()&&isDoneRobot)
 			{
-				G_glassesMode = TARGET_APPROACH;
 				RobotCommand(Calibrate);
+				G_glassesMode = TARGET_APPROACH;
 			}
 			else if(isDoneRobot)
 			{
@@ -364,8 +379,8 @@ void* RobotSearch::runThread(void*)
 		//		asking_for_help();
 		//}
 		//GlassesModeMutex.unlock();
-		
-  }//end of while(1)
+
+	}//end of while(1)
 }
 
 

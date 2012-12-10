@@ -22,6 +22,7 @@
 #include "CommReceiver.h"
 #include <time.h>
 
+#define OBSTACLE 0
 
 using namespace cv;
 using namespace std;
@@ -70,13 +71,25 @@ void LeftOrRightOrNod(){
 		GlassesModeMutex.lock();
 		G_glassesMode = TARGET_APPROACH;	
 		GlassesModeMutex.unlock();
+
+#if OBSTACLE
 		if(G_robotsearch->OR())
 			RobotCommand(Calibrate);
 		else
 		{
-			RobotCommand(CTargetApproachObstacles);
-			G_robotsearch->resetRobotCameraParam();
+			RobotCommand(9, 2);
+			
+			if(G_robotsearch->OR())
+				RobotCommand(Calibrate);
+			else
+			{
+				RobotCommand(CTargetApproachObstacles);
+				G_robotsearch->resetRobotCameraParam();
+			}
 		}
+#else
+		RobotCommand(TARGET_APPROACH);
+#endif
 		return;
 	}
 
@@ -257,12 +270,10 @@ void getPatternsWithInputImage(Mat preFrame, Mat curFrame, int& pattern){
 						cumulatedY += abs(temp[i].second);
 					}
 					cout << cumulatedY << " " << cumulatedX << endl;
-					if(cumulatedY > 3 || (cumulatedX < 10 && cumulatedX > -10)){
+					if(cumulatedY > 3 || (cumulatedX < 6 && cumulatedX > -6))
 						RS_glassesMode = others;
-					}
-					else{
+					else
 						RS_glassesMode = shake;
-					}
 				}else{
 					RS_glassesMode = others;
 				};//1.Nod 2.Shake 3.Others

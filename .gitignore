@@ -39,7 +39,6 @@ local.properties
 # User-specific files
 *.suo
 *.user
-*.dll
 *.sln.docstates
 
 # Build results
@@ -47,12 +46,16 @@ local.properties
 [Rr]elease/
 *_i.c
 *_p.c
+*.avi
+<<<<<<< HEAD
+=======
+*.dll
+>>>>>>> 1
 *.ilk
 *.meta
 *.obj
 *.pch
 *.pdb
-*.avi
 *.pgc
 *.pgd
 *.rsp

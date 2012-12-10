@@ -13,17 +13,29 @@ extern ArSick sick;
 extern ArVCC4* G_PTZHandler;		//from KeyPtz.cpp
 // extern ArAnalogGyro *G_gyro;
 
-int goalsX[]	= {	50,			1300,		2200,		 1220,		 -120,		0};
+int goalsX[]	= {	100,			1300,		2200,		 1220,		 -120,		0};
 int goalsY[]	= {1300,		1200,			 0,		-1300,		-1400,		0};
-int goalsHeading[]	= {  90,      0,     -90,     -90,      -90,		0};
+int goalsHeading[]	= {  -20,      0,     -90,     -90,      -90,		0};
 
-int headings[8] = {-90,30,0,120,90,210,180,-60};
-
-int findNeighbor(int *goals);
 int goalIndex = 0;
+int headingIndex = 0;
 int CameraMoveCount = 0;
 void CoordinateCalculation(const double robotCurrentX, const double robotCurrentY, double* targetX, double* targetY, const double camAngle, const double robotHeading, const double movDistance);
-void coordinateCalculation(double robotCurrentX,double robotCurrentY,double *outputX,double *outputY,double camAngle, double robotHeading,double moveDistance);
+void coordinateCalculation(double robotCurrentX,double robotCurrentY,double *outputX,double *outputY,double currentAngle,double moveDistance);
+
+
+void resetMotion()
+{
+	CameraMoveCount=0;
+	headingIndex=0;
+	goalIndex=0;
+	targetDistance = 0;
+	G_PTZHandler->getRealPanTilt();
+	G_PTZHandler->reset();
+	ArUtil::sleep(500);
+	G_PTZHandler->tiltRel(-10);
+}
+
 void basic_turn(int turnAngal)
 {
 	// ArTime start;
@@ -74,31 +86,22 @@ void basic_turn(int turnAngal)
 void S_GlassesCancel( ArServerClient *serverclient, ArNetPacket *socket)
 {
 	cout <<"Canceled from glasses, set back camera" <<endl;
-	goalIndex = 0;
-	CameraMoveCount = 0;
-	targetDistance = 0;
-	G_PTZHandler->reset();
-	ArUtil::sleep(500);
-	//G_PTZHandler->zoom(G_PTZHandler->getZoom() + 250);
-	G_PTZHandler->tiltRel(-10);
-	G_PathPlanning->pathPlanToPose(ArPose(0, 0, 0), true,true);
+
+	
+	resetMotion();
 	serverclient->sendPacketTcp(socket);
 }
 
 void S_Calibration( ArServerClient *serverclient, ArNetPacket *socket)
 {
-	//G_PTZHandler->zoom(G_PTZHandler->getZoom() + 1300);
-	//ArUtil::sleep(8000);
 	int cameraAdjustingAngle = socket->bufToDouble();
 	cout << "Adjust camera angle ... " << " " <<
 		cameraAdjustingAngle << endl;
 
 	G_PTZHandler-> panRel(cameraAdjustingAngle);
-	ArUtil::sleep(4000);
+	ArUtil::sleep(1000);
 	serverclient->sendPacketTcp(socket);
 }
-
-
 
 
 
@@ -125,11 +128,12 @@ void S_CameraMotion( ArServerClient *serverclient, ArNetPacket *socket)
 	{
 		CameraMoveCount=0;G_PTZHandler->panRel(-70);
 	}
-	//------------------------------------------------------------------------------------------------------
-	ArUtil::sleep(3000);
-	//cout << timer.mSecSince() <<endl;
-	G_PTZHandler->getRealPanTilt();
 	cout << " Current pan = " << G_PTZHandler->getPan() << endl;
+	//------------------------------------------------------------------------------------------------------
+	ArUtil::sleep(2500);
+
+	G_PTZHandler->getRealPanTilt();
+	
 	serverclient->sendPacketTcp(socket);
 
 }
@@ -139,6 +143,9 @@ void S_CameraMotion( ArServerClient *serverclient, ArNetPacket *socket)
 void S_RobotTurnLeft( ArServerClient *serverclient, ArNetPacket *socket)
 {
 	cout << "turn left" <<endl;
+	G_PTZHandler->getRealPanTilt();
+	if(G_PTZHandler->getTilt()>=0)
+		G_PTZHandler->tiltRel(-10);
 	basic_turn(ANGAL_FOR_TURN);
 	serverclient->sendPacketTcp(socket);
 }
@@ -147,6 +154,9 @@ void S_RobotTurnLeft( ArServerClient *serverclient, ArNetPacket *socket)
 void S_RobotTurnRight( ArServerClient *serverclient, ArNetPacket *socket)
 {
 	cout << "turn right" <<endl;
+	G_PTZHandler->getRealPanTilt();
+	if(G_PTZHandler->getTilt()>=0)
+		G_PTZHandler->tiltRel(-10);
 	basic_turn(-ANGAL_FOR_TURN);
 	serverclient->sendPacketTcp(socket);
 }
@@ -174,6 +184,7 @@ void S_RobotMotion( ArServerClient *serverclient, ArNetPacket *socket)
 				break;
 			}else //Failed Handler
 			{
+				cout << "G_PathPlanning->getState() is " << G_PathPlanning->getState()<<endl;
 				if (G_PathPlanning->getState() == ArPathPlanningTask::FAILED_MOVE)
 				{
 					cout << "FAILED_MOVE"<<endl;
@@ -193,17 +204,16 @@ void S_RobotMotion( ArServerClient *serverclient, ArNetPacket *socket)
 					G_PathPlanning->cancelPathPlan();
 					break;
 				}
-
 				else 
 				{
-					cout << "G_PathPlanning->getState() is " << G_PathPlanning->getState()<<endl;
+					
 					cout << "I have no idea what failure is... "<<endl;
 					G_PathPlanning->cancelPathPlan();
 					break;
 				}
 			}
 	}
-	
+
 	goalIndex++;
 	serverclient->sendPacketTcp(socket);
 	//-------------------------------------------------------------------------------------------------------
@@ -213,7 +223,7 @@ void S_RobotMotion( ArServerClient *serverclient, ArNetPacket *socket)
 void S_TargetApproach( ArServerClient *serverclient, ArNetPacket *socket)
 {
 	cout << "The last step: TargetApproach!" <<endl;
-
+	CameraMoveCount = 0;
 	//G_PathPlanning->setCollisionRange(1000);
 	//G_PathPlanning->setFrontClearance(40);
 	//G_PathPlanning->setGoalDistanceTolerance(2500);
@@ -225,7 +235,9 @@ void S_TargetApproach( ArServerClient *serverclient, ArNetPacket *socket)
 	double robotCurrentY = robot.getPose().getY();
 	double angle = 0.0;
 	double distance =0.0;
+	double currentAngle;
 
+	
 	double targetX, targetY;
 	int disThreshold = 500;
 	//test mode
@@ -263,19 +275,20 @@ void S_TargetApproach( ArServerClient *serverclient, ArNetPacket *socket)
 
 	cout << "Camera Angle is " << camAngle << endl;
 RECALCULATE:
+	currentAngle = robotHeading+camAngle;
 	cout << "before calculation, check originalX, originalY " << robotCurrentX << " " << robotCurrentY << " robotHeading is " << robotHeading << endl<<endl;  
-	coordinateCalculation(robotCurrentX,robotCurrentY,&targetX,&targetY,camAngle,robotHeading,distance);
+	coordinateCalculation(robotCurrentX,robotCurrentY,&targetX,&targetY,currentAngle,distance);
 	//
 	//cout << "before movement, check targetX, target Y" << targetX << " " << targetY << "robotHeading is "<< robotHeading << endl << endl;
-
+	
 
 	cout << "targetX : " <<targetX << " targetY" <<targetY;
-	G_PathPlanning->pathPlanToPose(ArPose(targetX, targetY, camAngle),true,true);
+	G_PathPlanning->pathPlanToPose(ArPose(targetX,targetY,robotHeading),true,true);
 	cout << "RobotMotion is processing..." <<endl;
 
 	G_PTZHandler->reset();
-		G_PTZHandler->tiltRel(-10);
-
+	ArUtil::sleep(300);
+	G_PTZHandler->tiltRel(-10);
 		while(1)
 		{
 			if (G_PathPlanning->getState() == ArPathPlanningTask::MOVING_TO_GOAL || G_PathPlanning->getState() == 1 || G_PathPlanning->getState() == 2)
@@ -329,62 +342,60 @@ RECALCULATE:
 				}
 			}
 		}
-
 	//serverclient->sendPacketTcp(socket);
 
 	ArUtil::sleep(2000);
 
-	//--------------------------Heading Home----------------------------------
-	cout << "RobotMotion is heading home..." <<endl;
 
+	cout << "RobotMotion is heading home..." <<endl;
 	G_PathPlanning->pathPlanToPose(ArPose(0,0,0),true,true);
 
-	while(1)
-	{
+		//while(1)
+		//{
+		//	if (G_PathPlanning->getState() == ArPathPlanningTask::MOVING_TO_GOAL || G_PathPlanning->getState() == 1 || G_PathPlanning->getState() == 2)
+		//		continue;
+		//	else
+		//	if(G_PathPlanning->getState() == ArPathPlanningTask::REACHED_GOAL )
+		//	{
+		//		break;
+		//	}else //Failed Handler
+		//	{
+		//		/*if (G_PathPlanning->getState() == ArPathPlanningTask::FAILED_MOVE)
+		//		{
+		//			cout << "FAILED_MOVE"<<endl;
+		//			G_PathPlanning->cancelPathPlan(); 
+		//			break;
+		//		}*/
+		//		if(G_PathPlanning->getState() == ArPathPlanningTask::FAILED_PLAN)
+		//		{
+		//			cout << "FAILED_PLAN"<<endl;
 
-		if(G_PathPlanning->getState() != ArPathPlanningTask::REACHED_GOAL )
-		{
-			break;
-		}else //Failed Handler
-		{
-			//if (G_PathPlanning->getState() == ArPathPlanningTask::FAILED_MOVE)
-			//{
-			//	cout << "FAILED_MOVE"<<endl;
-			//	G_PathPlanning->cancelPathPlan(); 
-			//	break;
-			//}
-			//else if(G_PathPlanning->getState() == ArPathPlanningTask::FAILED_PLAN)
-			//{
-			//	cout << "FAILED_PLAN"<<endl;
-			//	G_PathPlanning->cancelPathPlan();
-			//	break;
-			//}
+		//			 break;
+		//		}
+		//		/*
+		//		else if(G_PathPlanning->getLocalPathState() == ArPathPlanningTask::OBSTACLE_TOO_CLOSE )
+		//		{
+		//			cout << "OBSTACLE_TOO_CLOSE"<<endl;
+		//			G_PathPlanning->cancelPathPlan();
+		//			break;
+		//		}
 
-			//else if(G_PathPlanning->getLocalPathState() == ArPathPlanningTask::OBSTACLE_TOO_CLOSE )
-			//{
-			//	cout << "OBSTACLE_TOO_CLOSE"<<endl;
-			//	G_PathPlanning->cancelPathPlan();
-			//	break;
-			//}
+		//		else*/ if(G_PathPlanning->getLocalPathState() == ArPathPlanningTask::NO_LOCAL_PLAN  )
+		//		{
+		//			cout << "NO_LOCAL_PLAN"<<endl;
 
-			//else if(G_PathPlanning->getLocalPathState() == ArPathPlanningTask::NO_LOCAL_PLAN  )
-			//{
-			//	cout << "NO_LOCAL_PLAN"<<endl;
-			//	if (distance>200)
-			//	{
-			//		distance -= 100;
-			//		goto RECALCULATE;
-			//	}
-			//	else break;
-			//}
-			//else 
-			{
-				G_PathPlanning->cancelPathPlan();
-				break;
-			}
-		}
-	}
-	CameraMoveCount=0;
+		//			break;
+		//		}
+		//		else 
+		//		{
+		//			cout << "G_PathPlanning->getState() is " << G_PathPlanning->getState()<<endl;
+		//			cout << "I have no idea what failure is... "<<endl;
+		//			G_PathPlanning->cancelPathPlan();
+		//			break;
+		//		}
+		//	}
+		//}
+	
 	serverclient->sendPacketTcp(socket);
 }
 
@@ -415,6 +426,7 @@ double getAngle(double targetX, double targetY, double originalX, double origina
 	}
 }
 
+
 #define DISTANCE_VALVE 1000
 #define EXTRA_DISTANCE 500
 ArPose OriginalPose;
@@ -435,12 +447,12 @@ void S_TargetApproach_Obstacles( ArServerClient *serverclient, ArNetPacket *sock
 		OriginalPose = robot.getPose();
 	}
 	cout << "The closest reading is " << targetDistance << " at " << angle << " degree , " << " " << camAngle<< endl;
-	coordinateCalculation(OriginalPose.getX(),OriginalPose.getX(),&targetX,&targetY,0, OriginalPose.getTh(),targetDistance);
+	coordinateCalculation(OriginalPose.getX(),OriginalPose.getX(),&targetX,&targetY, OriginalPose.getTh(),targetDistance);
 	cout << "targetPose = " << targetX <<" " << targetY <<endl;
 
 	targetDistance += EXTRA_DISTANCE;
 
-	coordinateCalculation(OriginalPose.getX(),OriginalPose.getX(),&targetX,&targetY,0, OriginalPose.getTh(),targetDistance);
+	coordinateCalculation(OriginalPose.getX(),OriginalPose.getX(),&targetX,&targetY, OriginalPose.getTh(),targetDistance);
 
 	cout << "targetPose = " << targetX <<" " << targetY <<endl;
 
@@ -448,7 +460,7 @@ void S_TargetApproach_Obstacles( ArServerClient *serverclient, ArNetPacket *sock
 
 	G_PathPlanning->pathPlanToPose(targetPose,true,true);	
 	double tempDistance;
-	ArUtil::sleep(500);
+	ArUtil::sleep(1000);
 	while(G_PathPlanning->getState() != ArPathPlanningTask::REACHED_GOAL )
 	{
 		//std::list<ArPose> path = G_PathPlanning->getPathFromTo(robot.getPose(), targetPose);
@@ -472,11 +484,6 @@ void S_TargetApproach_Obstacles( ArServerClient *serverclient, ArNetPacket *sock
 				MidPose.setY(tempY);
 				MidPose.setTh(myIterator->getTh());
 
-				//double midAngle = getAngle(tempX, tempY, OriginalPose.getX(), OriginalPose.getY());
-				//if(midAngle > OriginalPose.getTh())
-				//	MidPose.setTh(OriginalPose.getTh() + 90);
-				//else
-				//	MidPose.setTh(OriginalPose.getTh() - 90);
 				G_PathPlanning->cancelPathPlan();
 				goto breakPathPlanning;
 			}
@@ -501,10 +508,8 @@ breakPathPlanning:
 
 
 
-void coordinateCalculation(double robotCurrentX,double robotCurrentY,double *outputX,double *outputY,double camAngle, double robotHeading,double moveDistance){
-	double currentAngle;
+void coordinateCalculation(double robotCurrentX,double robotCurrentY,double *outputX,double *outputY,double currentAngle,double moveDistance){
 
-	currentAngle = robotHeading+camAngle;
 	
 	if(currentAngle > 180)
 	{

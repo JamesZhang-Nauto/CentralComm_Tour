@@ -9,9 +9,9 @@
 #include <cmath>
 #include <iostream>
 using namespace std;
-// using namespace cv;
 
 
+void resetMotion();
 void turn_func( ArServerClient *serverclient, ArNetPacket *socket);
 void S_RobotMotion( ArServerClient *serverclient, ArNetPacket *socket);
 void S_CameraMotion( ArServerClient *serverclient, ArNetPacket *socket);
@@ -22,6 +22,6 @@ void S_TargetApproach( ArServerClient *serverclient, ArNetPacket *socket);
 void S_GlassesCancel( ArServerClient *serverclient, ArNetPacket *socket);
 void S_Calibration( ArServerClient *serverclient, ArNetPacket *socket);
 double getAngle(double targetX, double targetY, double originalX, double originalY);
-void CoordinateCalculation(const double robotCurrentX,const double robotCurrentY,double *outputX,double *outputY,const double camAngle, const double robotHeading,const double movDistance);
-void coordinateCalculation(const double robotCurrentX,const double robotCurrentY,double *outputX,double *outputY,const double camAngle, const double robotHeading,const double movDistance);
+//void CoordinateCalculation(const double robotCurrentX,const double robotCurrentY,double *outputX,double *outputY,const double camAngle, const double robotHeading,const double movDistance);
+void coordinateCalculation(double robotCurrentX,double robotCurrentY,double *outputX,double *outputY,double currentAngle,double moveDistance);
 #endif

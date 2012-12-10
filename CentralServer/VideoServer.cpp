@@ -1,13 +1,21 @@
-#include "VideoServer.h"
-#include "ArNetworking.h"
 
+
+
+
+#include "VCCHandler.h"
+#include "VideoServer.h"
+#include "MotionsServer.h"
+#define VIDEO_PORT 11000
+
+
+ArSocket clientSock, serverSock;
 ArMutex mutex_video;
+int is_data_ready = 0;
 Mat cap_img;
 Mat gray_img;
-int is_data_ready = 0;
-extern ArVCC4* G_PTZHandler;
+//-------------------------------------------------------------------
 
-ArSocket clientSock, serverSock;;
+
 
 class streamServer : public ArASyncTask
 {
@@ -18,7 +26,7 @@ class streamServer : public ArASyncTask
 
 		// The socket objects: one for accepting new client connections,
 		// and another for communicating with a client after it connects.
-		
+
 
 		// Open the server socket
 		if (serverSock.open(VIDEO_PORT, ArSocket::TCP))
@@ -26,59 +34,41 @@ class streamServer : public ArASyncTask
 		else
 			ArLog::log(ArLog::Normal, " Failed to open the server port: %s.", serverSock.getErrorStr().c_str());
 
-		
-		
+
+
 
 		if (serverSock.accept(&clientSock))
 			ArLog::log(ArLog::Normal, " Client has connected.");
 		else
 			ArLog::log(ArLog::Terse, " Error in accepting a connection from the client: %s.", serverSock.getErrorStr().c_str());
-		
-		//.setCloseCallback(new ArGlobalFunctor1<ArNetPacket*>(&clientCloseCallback));
-		//serverSock.setCloseCallback(new ArGlobalFunctor1<ArNetPacket*>(&clientCloseCallback));
+
 		while(1)
 		{
 
-			//int clinetSocketStatus = serverSock.accept(&clientSock); // MODIFIED By Yang, Try to accept new client.
-			//
-			//if (clinetSocketStatus > 0){
+			mutex_video.lock();
 
-			//	char buf[1024] = {0};
-			//	int recievedInt = clientSock.read(buf, 1024, 0);
-			//	cout << recievedInt << endl;
+			if (is_data_ready) 
+			{
+				int grayImgSize=gray_img.rows*gray_img.cols;
+				//cout <<" Sending image to the client.grayImgSize= " << grayImgSize;
+				if ((strSize = clientSock.write(gray_img.data, grayImgSize))==grayImgSize )
 
-			//	while(true)
-			//	{
-					/* send the grayscaled frame, thread safe */
-					mutex_video.lock();
-		
-					if (is_data_ready) 
-					{
-						int grayImgSize=gray_img.rows*gray_img.cols;
-						//cout <<" Sending image to the client.grayImgSize= " << grayImgSize;
-						if ((strSize = clientSock.write(gray_img.data, grayImgSize))==grayImgSize )
-							;//ArLog::log(ArLog::Normal, " Sent image to the client.grayImgSize= %d", grayImgSize);
-						// 				else
-						// 					ArLog::log(ArLog::Normal, " Error in sending hello string to the client.");
+				is_data_ready = 0;
+			}
+			mutex_video.unlock();
 
-						//ArLog::log(ArLog::Normal, " String Size: \"%d\"", strSize);
-
-						is_data_ready = 0;
-					}
-					mutex_video.unlock();
-
-					//if(!clientSock.isOpen())
-					//{
-					//	clientSock.close();
-					//	ArLog::log(ArLog::Normal, " Socket to client closed.");
-					//	if (serverSock.accept(&clientSock))
-					//		ArLog::log(ArLog::Normal, " Client has connected.");
-					//	else
-					//		ArLog::log(ArLog::Terse, " Error in accepting a connection from the client: %s.", serverSock.getErrorStr().c_str());
-					//}
-				}
+			//if(!clientSock.isOpen())
+			//{
+			//	clientSock.close();
+			//	ArLog::log(ArLog::Normal, " Socket to client closed.");
+			//	if (serverSock.accept(&clientSock))
+			//		ArLog::log(ArLog::Normal, " Client has connected.");
+			//	else
+			//		ArLog::log(ArLog::Terse, " Error in accepting a connection from the client: %s.", serverSock.getErrorStr().c_str());
 			//}
-			
+		}
+		//}
+
 		//}
 		// Now lets close the connection to the client
 		clientSock.close();
@@ -93,48 +83,80 @@ class streamServer : public ArASyncTask
 	} //end of runThread
 };
 streamServer ss;
-
 void clientCloseCallback(ArServerClient * serverClient)
 {
+	//ss.cancelAll();
 	clientSock.close();
 	serverSock.close();
-	G_PTZHandler->reset();
-	ArUtil::sleep(200);
-	G_PTZHandler->tiltRel(-10);
+	
+
+	resetMotion();
+	//if(!ss.getRunning())
 	ss.runAsync();
 
 	cout << "client is closed, callback is done!" <<endl;
 
 }
 
+void VideoServerBase::RobotVideoCB (ArServerClient *serverclient, ArNetPacket* )
+{
+	//cout <<gray_img.rows << " " << gray_img.cols << " " <<  gray_img.type();
 
+	ArNetPacket packet1,packet2;
+	ArNetPacket *videoPacket;
+
+	uchar *ptr;
+	ptr=gray_img.data;
+	int imgSizeRemainer = gray_img.rows*gray_img.cols;
+
+	mutex_video.lock();
+	while(imgSizeRemainer>packet1.MAX_DATA_LENGTH)
+	{
+		packet1.empty();
+		//cout << imgSizeRemainer << endl;
+		packet1.dataToBuf(ptr, packet1.MAX_DATA_LENGTH);
+		ptr += packet1.MAX_DATA_LENGTH;
+
+		imgSizeRemainer -= packet1.MAX_DATA_LENGTH;
+		
+		videoPacket = &packet1;
+		serverclient->sendPacketTcp(videoPacket);
+	}
+	packet1.empty();
+
+	packet1.dataToBuf(ptr, imgSizeRemainer);
+	//cout << imgSizeRemainer << endl;
+	videoPacket = &packet1;
+	serverclient->sendPacketTcp(videoPacket);
+	mutex_video.unlock();
+	//cout << "send out image"<<endl;
+}
 
 
 void* VideoServerBase::runThread(void*) 
 {
 	VideoCapture capture(-1);
 
-	//int key=0;
-
 	capture.set( CV_CAP_PROP_FRAME_WIDTH, 640);
 	capture.set( CV_CAP_PROP_FRAME_HEIGHT, 480);
-
-	capture.read(cap_img);
-
-	/* run the stream server as a separate thread */
 	
+	capture.read(cap_img);
+	
+	/* run the stream server as a separate thread */
 	ss.runAsync();
 
-	while(1/*key != 'q'*/) //display routine
+	while(true) 
 	{
-
 		capture.read(cap_img);
+		//mutex_video.lock();
+		//
+		//mutex_video.unlock();
+		//imshow(" ",gray_img);
+		//waitKey(1);
+
 
 		mutex_video.lock();
 		cvtColor(cap_img, gray_img, CV_BGR2GRAY);
-
-		//imshow(" ",gray_img);
-		waitKey(1);
 
 		is_data_ready = 1;
 		mutex_video.unlock();
